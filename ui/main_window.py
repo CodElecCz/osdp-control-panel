@@ -29,6 +29,7 @@ from core.config_manager import ConfigManager
 from core.osdp_manager import OsdpManager
 from ui.buzz_widget import BuzzWidget
 from ui.led_widget import LedWidget
+from ui.mfg_widget import MfgWidget
 from ui.pd_tree_widget import PdTreeWidget
 from ui.security_widget import SecurityWidget
 from ui.settings_dialog import SettingsDialog
@@ -51,6 +52,7 @@ class MainWindow(QMainWindow):
 
         self._led_widget.load_defaults(self._config.get_section("led"))
         self._buzz_widget.load_defaults(self._config.get_section("buzz"))
+        self._mfg_widget.load_defaults(self._config.get_section("mfg"))
 
         self._update_status_bar()
 
@@ -139,6 +141,9 @@ class MainWindow(QMainWindow):
 
         self._buzz_widget = BuzzWidget(self._manager)
         tabs.addTab(self._buzz_widget, "🔔 Buzzer")
+
+        self._mfg_widget = MfgWidget(self._manager)
+        tabs.addTab(self._mfg_widget, "🏭 MFG")
 
         self._security_widget = SecurityWidget(self._manager, self._config)
         tabs.addTab(self._security_widget, "🔐 Security")
@@ -285,6 +290,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self._config.update_section("led", self._led_widget.save_defaults())
         self._config.update_section("buzz", self._buzz_widget.save_defaults())
+        self._config.update_section("mfg", self._mfg_widget.save_defaults())
         self._config.save()
         if self._manager.is_connected:
             self._manager.disconnect()

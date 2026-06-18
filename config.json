@@ -19,5 +19,10 @@
     "on_count": 3,
     "off_count": 3,
     "rep_count": 3
+  },
+  "mfg": {
+    "vendor_code": "0A0EE0",
+    "command_data": "",
+    "command_text": "#"
   }
 }

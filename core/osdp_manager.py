@@ -560,12 +560,15 @@ class OsdpManager(QObject):
                 "data": command_data
             }
         else:
+            # Convert vendor_code bytes to integer (little-endian)
+            vendor_code_int = int.from_bytes(vendor_code, byteorder='little')
+            
             # Use osdp library structure
             cmd = {
-                "vendor_code": vendor_code,
+                "vendor_code": vendor_code_int,
                 "data": command_data,
             }
-        self._enqueue((osdp.Command.ManufacturerSpecific, cmd) if not self._sim_mode else cmd)
+        self._enqueue((osdp.Command.Manufacturer, cmd) if not self._sim_mode else cmd)
         self._log(
             f"MFG cmd → vendor={vendor_code.hex().upper()} "
             f"data={command_data.hex().upper()}"

@@ -1,0 +1,23 @@
+{
+  "port": "COM4",
+  "baud_rate": 115200,
+  "pd_address": 1,
+  "scbk": "455354454C4152323032363033303900",
+  "install_mode": true,
+  "led": {
+    "reader": 0,
+    "led_number": 0,
+    "on_color": 2,
+    "off_color": 0,
+    "on_count": 5,
+    "off_count": 5,
+    "timer_count": 10
+  },
+  "buzz": {
+    "reader": 0,
+    "tone_code": 2,
+    "on_count": 3,
+    "off_count": 3,
+    "rep_count": 3
+  }
+}

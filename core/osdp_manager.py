@@ -323,7 +323,8 @@ class OsdpManager(QObject):
     pd_capabilities = pyqtSignal(int, list)
     scan_finished = pyqtSignal(int)
 
-    _POLL_INTERVAL = 0.10   # seconds between online-status polls in monitor thread
+    _POLL_INTERVAL = 0.02   # seconds between command queue checks in monitor thread
+    _ONLINE_CHECK_INTERVAL = 2.0  # seconds between online-status polls
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -502,7 +503,11 @@ class OsdpManager(QObject):
         if not self._check_connected():
             return
         if self._sim_mode:
-            cmd = {"command": "CMD_BUZ", "reader": reader, "tone": tone_code}
+            cmd = {
+                "command": "CMD_BUZ", 
+                "reader": reader, 
+                "tone": tone_code
+                }
         else:
             # Determine control_code based on tone selection
             if tone_code == ToneCode.OFF:
@@ -653,6 +658,7 @@ class OsdpManager(QObject):
     # ------------------------------------------------------------------
 
     def _monitor_loop(self) -> None:
+        last_online_check = 0.0
         while self._monitor_running and self._cp is not None:
             # drain command queue
             while True:
@@ -683,12 +689,13 @@ class OsdpManager(QObject):
                                     break
                                 else:
                                     if attempt < max_retries - 1:
-                                        self._log(f"Queue full, retrying in 100ms... (attempt {attempt + 1}/{max_retries})")
-                                        time.sleep(0.100)
+                                        retry_delay_ms = int(self._POLL_INTERVAL * 1000)
+                                        self._log(f"Queue full, retrying in {retry_delay_ms}ms... (attempt {attempt + 1}/{max_retries})")
+                                        time.sleep(self._POLL_INTERVAL)
                             except (ValueError, KeyError, SystemError, Exception) as lib_err:
                                 self._log(f"[CRITICAL] LibOSDP Core Rejected Structure on attempt {attempt + 1}: {lib_err}")
                                 if attempt < max_retries - 1:
-                                    time.sleep(0.100)
+                                    time.sleep(self._POLL_INTERVAL)
                                     continue
                         
                         if not command_sent:
@@ -713,35 +720,38 @@ class OsdpManager(QObject):
                     self.error_occurred.emit(f"Send command error: {exc}")
                     logger.error(f"Command send failed:\n{tb}")
 
-            # poll online status
-            try:
-                online = self._cp.is_online(self._pd_address)
-                if online != self._pd_was_online:
-                    self._pd_was_online = online
-                    if online:
-                        self.pd_online.emit(self._pd_address)
-                        self._log(f"PD {self._pd_address} is ONLINE")
-                        # Query and report PD ID and capabilities when PD comes online
-                        try:
-                            pd_id = _safe_get_pd_id(self._cp, self._pd_address)
-                            if pd_id:
-                                self.pd_discovered.emit(self._pd_address, pd_id)
-                                self._log(f"PD {self._pd_address} ID retrieved")
-                        except Exception as id_err:
-                            self._log(f"Failed to query PD ID: {id_err}")
-                        
-                        try:
-                            caps = _safe_get_caps(self._cp, self._pd_address)
-                            if caps:
-                                self.pd_capabilities.emit(self._pd_address, caps)
-                                self._log(f"PD {self._pd_address} capabilities retrieved: {len(caps)} items")
-                        except Exception as cap_err:
-                            self._log(f"Failed to query capabilities: {cap_err}")
-                    else:
-                        self.pd_offline.emit(self._pd_address)
-                        self._log(f"PD {self._pd_address} is OFFLINE")
-            except Exception:
-                pass
+            # poll online status (only every _ONLINE_CHECK_INTERVAL seconds)
+            current_time = time.time()
+            if current_time - last_online_check >= self._ONLINE_CHECK_INTERVAL:
+                last_online_check = current_time
+                try:
+                    online = self._cp.is_online(self._pd_address)
+                    if online != self._pd_was_online:
+                        self._pd_was_online = online
+                        if online:
+                            self.pd_online.emit(self._pd_address)
+                            self._log(f"PD {self._pd_address} is ONLINE")
+                            # Query and report PD ID and capabilities when PD comes online
+                            try:
+                                pd_id = _safe_get_pd_id(self._cp, self._pd_address)
+                                if pd_id:
+                                    self.pd_discovered.emit(self._pd_address, pd_id)
+                                    self._log(f"PD {self._pd_address} ID retrieved")
+                            except Exception as id_err:
+                                self._log(f"Failed to query PD ID: {id_err}")
+                            
+                            try:
+                                caps = _safe_get_caps(self._cp, self._pd_address)
+                                if caps:
+                                    self.pd_capabilities.emit(self._pd_address, caps)
+                                    self._log(f"PD {self._pd_address} capabilities retrieved: {len(caps)} items")
+                            except Exception as cap_err:
+                                self._log(f"Failed to query capabilities: {cap_err}")
+                        else:
+                            self.pd_offline.emit(self._pd_address)
+                            self._log(f"PD {self._pd_address} is OFFLINE")
+                except Exception:
+                    pass
 
             time.sleep(self._POLL_INTERVAL)
 
@@ -762,7 +772,7 @@ class OsdpManager(QObject):
                 self._log(f"[SIM] Command executed: {cmd}")
             except queue.Empty:
                 pass
-            time.sleep(0.020)
+            time.sleep(self._POLL_INTERVAL)
 
         self._log("[SIM] Refresh loop stopped")
 

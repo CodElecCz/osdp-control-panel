@@ -332,6 +332,7 @@ class OsdpManager(QObject):
         self._channel: "SerialChannel | None" = None
         self._monitor_thread: threading.Thread | None = None
         self._monitor_running = False
+        self._refresh_lock = threading.Lock()
         self._cmd_queue: queue.Queue[dict] = queue.Queue()
         self._pd_address: int = 0
         self._pd_was_online: bool | None = None
@@ -506,7 +507,7 @@ class OsdpManager(QObject):
             cmd = {
                 "command": "CMD_BUZ", 
                 "reader": reader, 
-                "tone": tone_code
+                #"tone": tone_code
                 }
         else:
             # Determine control_code based on tone selection
@@ -519,7 +520,7 @@ class OsdpManager(QObject):
             cmd = {
                 "reader": reader,
                 "control_code": control_code_val,
-                "tone": tone_code,
+                # "tone": tone_code,
                 "on_count": on_count,
                 "off_count": off_count,
                 "rep_count": rep_count,
@@ -545,6 +546,30 @@ class OsdpManager(QObject):
             }
         self._enqueue((osdp.Command.Keyset, cmd) if not self._sim_mode else cmd)
         self._log(f"KEYSET cmd → key={key_data.hex().upper()}")
+
+    def send_mfg(self, *, vendor_code: bytes, command_data: bytes) -> None:
+        if not self._check_connected():
+            return
+        if len(vendor_code) != 3:
+            self.error_occurred.emit("MFG: vendor_code must be exactly 3 bytes")
+            return
+        if self._sim_mode:
+            cmd = {
+                "command": "CMD_MFG",
+                "vendor_code": vendor_code,
+                "data": command_data
+            }
+        else:
+            # Use osdp library structure
+            cmd = {
+                "vendor_code": vendor_code,
+                "data": command_data,
+            }
+        self._enqueue((osdp.Command.ManufacturerSpecific, cmd) if not self._sim_mode else cmd)
+        self._log(
+            f"MFG cmd → vendor={vendor_code.hex().upper()} "
+            f"data={command_data.hex().upper()}"
+        )
 
     # ------------------------------------------------------------------
     # bus scan
@@ -682,16 +707,17 @@ class OsdpManager(QObject):
                         for attempt in range(max_retries):
                             try:
                                 # 2. Catch native library-level structural errors cleanly
-                                result = self._cp.send_command(self._pd_address, cmd_dict)
-                                if result:
-                                    self._log(f"Command sent successfully")
-                                    command_sent = True
-                                    break
-                                else:
-                                    if attempt < max_retries - 1:
-                                        retry_delay_ms = int(self._POLL_INTERVAL * 1000)
-                                        self._log(f"Queue full, retrying in {retry_delay_ms}ms... (attempt {attempt + 1}/{max_retries})")
-                                        time.sleep(self._POLL_INTERVAL)
+                                    result = self._cp.submit_command(self._pd_address, cmd_dict)
+                                    if result:
+                                        self._log(f"Command sent successfully")
+                                        command_sent = True
+                                        break
+                                    else:
+                                        if attempt < max_retries - 1:
+                                            retry_delay_ms = int(self._POLL_INTERVAL * 1000)
+                                            self._log(f"Queue full, retrying in {retry_delay_ms}ms... (attempt {attempt + 1}/{max_retries})")
+                                            time.sleep(self._POLL_INTERVAL)
+
                             except (ValueError, KeyError, SystemError, Exception) as lib_err:
                                 self._log(f"[CRITICAL] LibOSDP Core Rejected Structure on attempt {attempt + 1}: {lib_err}")
                                 if attempt < max_retries - 1:
@@ -702,7 +728,7 @@ class OsdpManager(QObject):
                             # Track the estimated queue state for diagnostics
                             self._log(f"[QUEUE DIAGNOSTIC] System rejected command injection. "
                                      f"Target PD: {self._pd_address} | "
-                                     f"Pending messages waiting in Python queue: {self._cmd_queue.qsize()}")
+                                     f"Pending messages waiting in queue: {self._cmd_queue.qsize()}")
                             self.error_occurred.emit(
                                 f"Command rejected after {max_retries} attempts. "
                                 f"The PD command queue is full or parameters are invalid."
@@ -719,6 +745,15 @@ class OsdpManager(QObject):
                     tb = traceback.format_exc()
                     self.error_occurred.emit(f"Send command error: {exc}")
                     logger.error(f"Command send failed:\n{tb}")
+
+            # 2. THE THROTTLED REFRESH: Fetch events and monitor state
+            # Uses cp.get_event() to let the native background engine handle the heavy lifting
+            try:
+                event = self._cp.get_event(self._pd_address, timeout=0)
+                if event:
+                    self._log(f"Received hardware event: {event}")
+            except Exception as ev_err:
+                pass
 
             # poll online status (only every _ONLINE_CHECK_INTERVAL seconds)
             current_time = time.time()

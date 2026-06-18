@@ -1,5 +1,3 @@
 PyQt6>=6.4.0
 pyserial>=3.5
-# pyosdp must be installed manually from source:
-#   pip install git+https://github.com/goToMain/libosdp.git#subdirectory=python
-# Without it the app runs in simulation mode.
+libosdp==3.1.0

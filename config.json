@@ -23,6 +23,6 @@
   "mfg": {
     "vendor_code": "0A0EE0",
     "command_data": "",
-    "command_text": "#"
+    "command_text": "$RDF\\r\\n"
   }
 }

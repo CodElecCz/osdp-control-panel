@@ -2,7 +2,7 @@
   "port": "COM4",
   "baud_rate": 115200,
   "pd_address": 1,
-  "scbk": "455354454C4152323032363033303900",
+  "scbk": "",
   "install_mode": false,
   "led": {
     "reader": 0,
